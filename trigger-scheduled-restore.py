@@ -174,3 +174,59 @@ def is_in_place_restore(restore_opts: Dict[str, Any]) -> bool:
     Adjust if you use explicit 'inPlace' flags in your schedules.
     """
     dest = restore_opts.get("destination")
+    return not dest  # crude heuristic; refine as needed for your environment
+
+
+def submit_restore(token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """POST /CreateTask to start the restore; returns response with jobIds."""
+    r = requests.post(
+        f"{BASE}/CreateTask",
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authtoken": token
+        },
+        data=json.dumps(payload),
+        verify=VERIFY_TLS
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def logout(token: str) -> None:
+    try:
+        requests.post(
+            f"{BASE}/Logout",
+            headers={"Accept": "application/json", "Authtoken": token},
+            verify=VERIFY_TLS
+        )
+    except Exception:
+        pass
+
+
+def main():
+    if not RESTORE_SCHEDULE_TASK_IDS:
+        print("[ERROR] No schedule taskIds configured. Edit RESTORE_SCHEDULE_TASK_IDS.")
+        sys.exit(1)
+
+    print("[INFO] Logging in...")
+    token = login()
+
+    try:
+        for task_id in RESTORE_SCHEDULE_TASK_IDS:
+            print(f"[INFO] Reading schedule properties for taskId={task_id} ...")
+            props = get_schedule_properties(token, task_id)
+
+            payload = build_restore_payload(props)
+
+            print(f"[INFO] Submitting restore for taskId={task_id} ...")
+            resp = submit_restore(token, payload)
+            job_ids = resp.get("jobIds") or resp.get("jobIds", [])
+            print(f"[OK] taskId={task_id} restore submitted. Job IDs: {job_ids}")
+
+    finally:
+        logout(token)
+        print("[INFO] Logged out.")
+
+if __name__ == "__main__":
+    main()
